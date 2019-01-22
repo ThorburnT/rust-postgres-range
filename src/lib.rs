@@ -5,16 +5,16 @@ extern crate postgres_protocol;
 #[macro_use(to_sql_checked)]
 extern crate postgres_shared;
 
-#[cfg(feature = "with-time")]
-extern crate time;
 #[cfg(feature = "with-chrono")]
 extern crate chrono;
+#[cfg(feature = "with-time")]
+extern crate time;
 
 #[cfg(test)]
 extern crate postgres;
 
 #[cfg(feature = "with-chrono")]
-use chrono::{DateTime, TimeZone};
+use chrono::{DateTime, NaiveDate, TimeZone};
 use std::cmp::Ordering;
 use std::fmt;
 use std::i32;
@@ -63,56 +63,60 @@ use InnerRange::{Empty, Normal};
 /// }
 #[macro_export]
 macro_rules! range {
-    (empty) => ($crate::Range::empty());
-    ('(',; ')') => ($crate::Range::new(None, None));
-    ('(', $h:expr; ')') => (
-        $crate::Range::new(None,
-            Some($crate::RangeBound::new($h,
-                $crate::BoundType::Exclusive)))
-    );
-    ('(', $h:expr; ']') => (
-        $crate::Range::new(None,
-            Some($crate::RangeBound::new($h,
-                $crate::BoundType::Inclusive)))
-    );
-    ('(' $l:expr,; ')') => (
+    (empty) => {
+        $crate::Range::empty()
+    };
+    ('(',; ')') => {
+        $crate::Range::new(None, None)
+    };
+    ('(', $h:expr; ')') => {
         $crate::Range::new(
-            Some($crate::RangeBound::new($l,
-                $crate::BoundType::Exclusive)), None)
-    );
-    ('[' $l:expr,; ')') => (
+            None,
+            Some($crate::RangeBound::new($h, $crate::BoundType::Exclusive)),
+        )
+    };
+    ('(', $h:expr; ']') => {
         $crate::Range::new(
-            Some($crate::RangeBound::new($l,
-                $crate::BoundType::Inclusive)), None)
-    );
-    ('(' $l:expr, $h:expr; ')') => (
+            None,
+            Some($crate::RangeBound::new($h, $crate::BoundType::Inclusive)),
+        )
+    };
+    ('(' $l:expr,; ')') => {
         $crate::Range::new(
-            Some($crate::RangeBound::new($l,
-                $crate::BoundType::Exclusive)),
-            Some($crate::RangeBound::new($h,
-                $crate::BoundType::Exclusive)))
-    );
-    ('(' $l:expr, $h:expr; ']') => (
+            Some($crate::RangeBound::new($l, $crate::BoundType::Exclusive)),
+            None,
+        )
+    };
+    ('[' $l:expr,; ')') => {
         $crate::Range::new(
-            Some($crate::RangeBound::new($l,
-                $crate::BoundType::Exclusive)),
-            Some($crate::RangeBound::new($h,
-                $crate::BoundType::Inclusive)))
-    );
-    ('[' $l:expr, $h:expr; ')') => (
+            Some($crate::RangeBound::new($l, $crate::BoundType::Inclusive)),
+            None,
+        )
+    };
+    ('(' $l:expr, $h:expr; ')') => {
         $crate::Range::new(
-            Some($crate::RangeBound::new($l,
-                $crate::BoundType::Inclusive)),
-            Some($crate::RangeBound::new($h,
-                $crate::BoundType::Exclusive)))
-    );
-    ('[' $l:expr, $h:expr; ']') => (
+            Some($crate::RangeBound::new($l, $crate::BoundType::Exclusive)),
+            Some($crate::RangeBound::new($h, $crate::BoundType::Exclusive)),
+        )
+    };
+    ('(' $l:expr, $h:expr; ']') => {
         $crate::Range::new(
-            Some($crate::RangeBound::new($l,
-                $crate::BoundType::Inclusive)),
-            Some($crate::RangeBound::new($h,
-                $crate::BoundType::Inclusive)))
-    )
+            Some($crate::RangeBound::new($l, $crate::BoundType::Exclusive)),
+            Some($crate::RangeBound::new($h, $crate::BoundType::Inclusive)),
+        )
+    };
+    ('[' $l:expr, $h:expr; ')') => {
+        $crate::Range::new(
+            Some($crate::RangeBound::new($l, $crate::BoundType::Inclusive)),
+            Some($crate::RangeBound::new($h, $crate::BoundType::Exclusive)),
+        )
+    };
+    ('[' $l:expr, $h:expr; ']') => {
+        $crate::Range::new(
+            Some($crate::RangeBound::new($l, $crate::BoundType::Inclusive)),
+            Some($crate::RangeBound::new($h, $crate::BoundType::Inclusive)),
+        )
+    };
 }
 
 mod impls;
@@ -133,9 +137,12 @@ pub trait Normalizable: Sized {
 }
 
 macro_rules! bounded_normalizable {
-    ($t:ident) => (
+    ($t:ident) => {
         impl Normalizable for $t {
-            fn normalize<S>(bound: RangeBound<S, $t>) -> RangeBound<S, $t> where S: BoundSided {
+            fn normalize<S>(bound: RangeBound<S, $t>) -> RangeBound<S, $t>
+            where
+                S: BoundSided,
+            {
                 match (<S as BoundSided>::side(), bound.type_) {
                     (Upper, Inclusive) => {
                         assert!(bound.value != $t::MAX);
@@ -145,11 +152,11 @@ macro_rules! bounded_normalizable {
                         assert!(bound.value != $t::MAX);
                         RangeBound::new(bound.value + 1, Inclusive)
                     }
-                    _ => bound
+                    _ => bound,
                 }
             }
         }
-    )
+    };
 }
 
 bounded_normalizable!(i32);
@@ -167,7 +174,9 @@ impl Normalizable for Timespec {
 
 #[cfg(feature = "with-chrono")]
 impl<T> Normalizable for DateTime<T>
-    where T: TimeZone {
+where
+    T: TimeZone,
+{
     fn normalize<S>(bound: RangeBound<S, DateTime<T>>) -> RangeBound<S, DateTime<T>>
     where
         S: BoundSided,
@@ -176,6 +185,15 @@ impl<T> Normalizable for DateTime<T>
     }
 }
 
+#[cfg(feature = "with-chrono")]
+impl Normalizable for NaiveDate {
+    fn normalize<S>(bound: RangeBound<S, NaiveDate>) -> RangeBound<S, NaiveDate>
+    where
+        S: BoundSided,
+    {
+        bound
+    }
+}
 
 /// The possible sides of a bound.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -320,8 +338,10 @@ where
             other.type_,
             self.value.partial_cmp(&other.value),
         ) {
-            (Upper, Exclusive, Inclusive, Some(Ordering::Equal)) | (Lower, Inclusive, Exclusive, Some(Ordering::Equal)) => Some(Ordering::Less),
-            (Upper, Inclusive, Exclusive, Some(Ordering::Equal)) | (Lower, Exclusive, Inclusive, Some(Ordering::Equal)) => Some(Ordering::Greater),
+            (Upper, Exclusive, Inclusive, Some(Ordering::Equal))
+            | (Lower, Inclusive, Exclusive, Some(Ordering::Equal)) => Some(Ordering::Less),
+            (Upper, Inclusive, Exclusive, Some(Ordering::Equal))
+            | (Lower, Exclusive, Inclusive, Some(Ordering::Equal)) => Some(Ordering::Greater),
             (_, _, _, cmp) => cmp,
         }
     }
@@ -339,8 +359,10 @@ where
             other.type_,
             self.value.cmp(&other.value),
         ) {
-            (Upper, Exclusive, Inclusive, Ordering::Equal) | (Lower, Inclusive, Exclusive, Ordering::Equal) => Ordering::Less,
-            (Upper, Inclusive, Exclusive, Ordering::Equal) | (Lower, Exclusive, Inclusive, Ordering::Equal) => Ordering::Greater,
+            (Upper, Exclusive, Inclusive, Ordering::Equal)
+            | (Lower, Inclusive, Exclusive, Ordering::Equal) => Ordering::Less,
+            (Upper, Inclusive, Exclusive, Ordering::Equal)
+            | (Lower, Exclusive, Inclusive, Ordering::Equal) => Ordering::Greater,
             (_, _, _, ord) => ord,
         }
     }
@@ -448,7 +470,10 @@ where
     /// Creates a new range.
     ///
     /// If a bound is `None`, the range is unbounded in that direction.
-    pub fn new(lower: Option<RangeBound<LowerBound, T>>, upper: Option<RangeBound<UpperBound, T>>) -> Range<T> {
+    pub fn new(
+        lower: Option<RangeBound<LowerBound, T>>,
+        upper: Option<RangeBound<UpperBound, T>>,
+    ) -> Range<T> {
         let lower = lower.map(Normalizable::normalize);
         let upper = upper.map(Normalizable::normalize);
 
@@ -501,11 +526,8 @@ where
         match self.inner {
             Empty => false,
             Normal(ref lower, ref upper) => {
-                lower.as_ref().map_or(true, |b| {
-                    b.in_bounds(value)
-                }) && upper.as_ref().map_or(true, |b| {
-                    b.in_bounds(value)
-                })
+                lower.as_ref().map_or(true, |b| b.in_bounds(value))
+                    && upper.as_ref().map_or(true, |b| b.in_bounds(value))
             }
         }
     }
@@ -520,7 +542,8 @@ where
             return false;
         }
 
-        OptBound(self.lower()) <= OptBound(other.lower()) && OptBound(self.upper()) >= OptBound(other.upper())
+        OptBound(self.lower()) <= OptBound(other.lower())
+            && OptBound(self.upper()) >= OptBound(other.upper())
     }
 }
 
@@ -561,8 +584,10 @@ where
             return Some(self.clone());
         }
 
-        let (OptBound(l_lower), OptBound(u_lower)) = order(OptBound(self.lower()), OptBound(other.lower()));
-        let (OptBound(l_upper), OptBound(u_upper)) = order(OptBound(self.upper()), OptBound(other.upper()));
+        let (OptBound(l_lower), OptBound(u_lower)) =
+            order(OptBound(self.lower()), OptBound(other.lower()));
+        let (OptBound(l_upper), OptBound(u_upper)) =
+            order(OptBound(self.upper()), OptBound(other.upper()));
 
         let discontiguous = match (u_lower, l_upper) {
             (
@@ -577,7 +602,9 @@ where
                     ..
                 }),
             ) => l >= u,
-            (Some(&RangeBound { value: ref l, .. }), Some(&RangeBound { value: ref u, .. })) => l > u,
+            (Some(&RangeBound { value: ref l, .. }), Some(&RangeBound { value: ref u, .. })) => {
+                l > u
+            }
             _ => false,
         };
 
@@ -596,8 +623,8 @@ where
 mod test {
     use std::i32;
 
-    use super::{BoundType, LowerBound, Normalizable, Range, RangeBound, UpperBound};
     use super::BoundType::{Exclusive, Inclusive};
+    use super::{BoundType, LowerBound, Normalizable, Range, RangeBound, UpperBound};
 
     #[test]
     fn test_range_bound_lower_lt() {
